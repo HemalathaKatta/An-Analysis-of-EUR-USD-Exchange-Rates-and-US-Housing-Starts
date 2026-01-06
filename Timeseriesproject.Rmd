@@ -1,0 +1,549 @@
+
+---
+title: "Time Series Analysis"
+output:
+  pdf_document: default
+  github_document: default
+---
+
+```{r}
+
+# EUR/USD EXCHANGE RATE
+
+
+# Clear environment
+rm(list=ls())
+
+# Load libraries
+library(forecast)
+library(tseries)
+library(TSA)
+
+# Load Data
+# Read CSV file
+eurusd_data <- read.csv("C:\\Users\\hkatt\\Downloads\\DEXUSEU.csv", stringsAsFactors=FALSE)
+
+# Check what we have
+cat("Column names:", colnames(eurusd_data), "\n")
+cat("Number of rows:", nrow(eurusd_data), "\n")
+head(eurusd_data)
+str(eurusd_data)
+
+# Clean Data
+# Common column names: DATE, DEXUSEU or observation_date, DEXUSEU
+
+# Check first column name and rename if needed
+if(colnames(eurusd_data)[1] != "DATE") {
+  colnames(eurusd_data)[1] <- "DATE"
+}
+if(colnames(eurusd_data)[2] != "DEXUSEU") {
+  colnames(eurusd_data)[2] <- "DEXUSEU"
+}
+
+# Remove rows where DEXUSEU is "." or empty
+eurusd_data <- eurusd_data[eurusd_data$DEXUSEU != ".", ]
+eurusd_data <- eurusd_data[eurusd_data$DEXUSEU != "", ]
+eurusd_data <- eurusd_data[!is.na(eurusd_data$DEXUSEU), ]
+
+# Convert DEXUSEU to numeric
+eurusd_data$DEXUSEU <- as.numeric(eurusd_data$DEXUSEU)
+
+# Remove any NA values created by conversion
+eurusd_data <- eurusd_data[!is.na(eurusd_data$DEXUSEU), ]
+
+# Check cleaned data
+cat("\nAfter cleaning:\n")
+cat("Number of rows:", nrow(eurusd_data), "\n")
+head(eurusd_data)
+
+# Convert Daily to Monthly
+# Parse the DATE column
+# Try different date formats
+eurusd_data$DATE <- tryCatch({
+  as.Date(eurusd_data$DATE, format="%Y-%m-%d")
+}, error = function(e) {
+  tryCatch({
+    as.Date(eurusd_data$DATE, format="%m/%d/%Y")
+  }, error = function(e) {
+    as.Date(eurusd_data$DATE)
+  })
+})
+
+# Check if dates parsed correctly
+cat("\nDate range:", as.character(min(eurusd_data$DATE)), "to", 
+    as.character(max(eurusd_data$DATE)), "\n")
+
+# Create Year-Month column
+eurusd_data$Year <- as.numeric(format(eurusd_data$DATE, "%Y"))
+eurusd_data$Month <- as.numeric(format(eurusd_data$DATE, "%m"))
+eurusd_data$YearMonth <- paste(eurusd_data$Year, 
+                                sprintf("%02d", eurusd_data$Month), 
+                                sep="-")
+
+# Calculate monthly averages
+monthly_data <- aggregate(DEXUSEU ~ YearMonth + Year + Month, 
+                          data=eurusd_data, 
+                          FUN=mean, 
+                          na.rm=TRUE)
+
+# Sort by date
+monthly_data <- monthly_data[order(monthly_data$YearMonth), ]
+
+# Check monthly data
+cat("\nMonthly data:\n")
+head(monthly_data)
+cat("Number of months:", nrow(monthly_data), "\n")
+
+# Get start date
+start_year <- monthly_data$Year[1]
+start_month <- monthly_data$Month[1]
+cat("Start:", start_year, "-", start_month, "\n")
+
+# Create Time Series
+eurusd <- ts(monthly_data$DEXUSEU, 
+             start=c(start_year, start_month), 
+             frequency=12)
+
+# Verify time series
+cat("\nTIME SERIES INFO\n")
+cat("Length:", length(eurusd), "\n")
+cat("Frequency:", frequency(eurusd), "\n")
+cat("Start:", start(eurusd), "\n")
+cat("End:", end(eurusd), "\n")
+
+# ANALYSIS BEGINS HERE
+
+# Step 1: Plot the Data
+par(mfrow=c(1,1))
+plot(eurusd, main="EUR/USD Exchange Rate (Monthly Average)", 
+     ylab="Exchange Rate (USD per EUR)", xlab="Year", 
+     col="blue", lwd=1.5)
+grid()
+
+# Step 2: Check Stationarity
+par(mfrow=c(1,2))
+acf(eurusd, lag.max=36, main="ACF of EUR/USD")
+pacf(eurusd, lag.max=36, main="PACF of EUR/USD")
+
+# ADF Test
+cat("\nADF TEST (Original Series)\n")
+adf_original <- adf.test(eurusd)
+print(adf_original)
+
+# Step 3: First Difference
+diff_eurusd <- diff(eurusd)
+
+par(mfrow=c(1,1))
+plot(diff_eurusd, main="First Difference of EUR/USD", 
+     ylab="Change in Rate", xlab="Year", col="blue")
+abline(h=0, col="red", lty=2)
+
+# ADF test on differenced series
+cat("\nADF TEST (Differenced Series)\n")
+adf_diff <- adf.test(diff_eurusd)
+print(adf_diff)
+
+# ACF/PACF of differenced series
+par(mfrow=c(1,2))
+acf(diff_eurusd, lag.max=24, main="ACF of Differenced EUR/USD")
+pacf(diff_eurusd, lag.max=24, main="PACF of Differenced EUR/USD")
+
+# EACF
+cat("\nEACF\n")
+eacf(diff_eurusd)
+
+# Step 4: Fit Candidate Models
+cat("\nFITTING MODELS\n")
+
+model1 <- Arima(eurusd, order=c(0,1,0))  # Random Walk
+model2 <- Arima(eurusd, order=c(1,1,0))  # ARIMA(1,1,0)
+model3 <- Arima(eurusd, order=c(0,1,1))  # ARIMA(0,1,1)
+model4 <- Arima(eurusd, order=c(1,1,1))  # ARIMA(1,1,1)
+model5 <- Arima(eurusd, order=c(2,1,0))  # ARIMA(2,1,0)
+model6 <- Arima(eurusd, order=c(0,1,2))  # ARIMA(0,1,2)
+model7 <- Arima(eurusd, order=c(2,1,1))  # ARIMA(2,1,1)
+
+# Auto ARIMA
+auto_model <- auto.arima(eurusd, seasonal=FALSE, stepwise=FALSE)
+
+# Compare AIC
+cat("\nMODEL COMPARISON (AIC)\n")
+model_comparison <- data.frame(
+  Model = c("ARIMA(0,1,0)", "ARIMA(1,1,0)", "ARIMA(0,1,1)", 
+            "ARIMA(1,1,1)", "ARIMA(2,1,0)", "ARIMA(0,1,2)", 
+            "ARIMA(2,1,1)", "Auto ARIMA"),
+  AIC = c(AIC(model1), AIC(model2), AIC(model3), AIC(model4),
+          AIC(model5), AIC(model6), AIC(model7), AIC(auto_model)),
+  BIC = c(BIC(model1), BIC(model2), BIC(model3), BIC(model4),
+          BIC(model5), BIC(model6), BIC(model7), BIC(auto_model))
+)
+model_comparison <- model_comparison[order(model_comparison$AIC), ]
+print(model_comparison)
+
+cat("\nAuto ARIMA selected:", arimaorder(auto_model), "\n")
+
+# Step 5: Select Best Model
+# Find model with lowest AIC
+best_model <- auto_model  # Usually auto.arima is good
+
+cat("\nBEST MODEL SUMMARY\n")
+summary(best_model)
+
+# Step 6: Model Diagnostics
+cat("\nMODEL DIAGNOSTICS\n")
+
+# Residual plots
+par(mfrow=c(2,2))
+
+plot(residuals(best_model), main="Residuals Over Time",
+     ylab="Residual", xlab="Year", col="blue")
+abline(h=0, col="red", lty=2)
+
+acf(residuals(best_model), lag.max=24, main="ACF of Residuals")
+
+qqnorm(residuals(best_model), main="Normal Q-Q Plot")
+qqline(residuals(best_model), col="red")
+
+hist(residuals(best_model), breaks=25, main="Histogram of Residuals",
+     xlab="Residual", col="lightblue", freq=FALSE)
+curve(dnorm(x, mean=mean(residuals(best_model)), 
+            sd=sd(residuals(best_model))), add=TRUE, col="red", lwd=2)
+
+# Ljung-Box Tests
+cat("\nLjung-Box Tests:\n")
+for(lag in c(6, 12, 18, 24)) {
+  lb <- Box.test(residuals(best_model), lag=lag, type="Ljung-Box")
+  cat("Lag", lag, ": Q =", round(lb$statistic, 2), 
+      ", p-value =", round(lb$p.value, 4), "\n")
+}
+
+# Shapiro-Wilk Test
+cat("\nShapiro-Wilk Test:\n")
+sw <- shapiro.test(residuals(best_model))
+cat("W =", round(sw$statistic, 4), ", p-value =", round(sw$p.value, 4), "\n")
+
+# tsdiag
+par(mfrow=c(1,1))
+tsdiag(best_model, gof.lag=24)
+
+# checkresiduals from forecast package
+checkresiduals(best_model)
+
+# Step 7: Forecasting
+cat("\nFORECASTING\n")
+
+# Forecast next 12 months
+fc <- forecast(best_model, h=12, level=c(80, 95))
+
+# Plot forecast
+par(mfrow=c(1,1))
+plot(fc, main="EUR/USD 12-Month Forecast",
+     xlab="Year", ylab="Exchange Rate (USD per EUR)",
+     col="blue", shadecols=c("lightblue", "lightgray"))
+grid()
+
+# Print forecast
+cat("\nForecast Values:\n")
+print(fc)
+
+# Zoomed plot (last 3 years + forecast)
+plot(fc, include=36, main="EUR/USD Forecast (Last 3 Years + 12 Months)",
+     xlab="Year", ylab="Exchange Rate")
+grid()
+
+# Summary for Report
+cat("\nSUMMARY FOR REPORT \n")
+cat("Dataset: EUR/USD Exchange Rate (Monthly Average)\n")
+cat("Period:", start_year, "-", start_month, "to", end(eurusd)[1], "-", end(eurusd)[2], "\n")
+cat("Observations:", length(eurusd), "\n")
+cat("Best Model: ARIMA(", paste(arimaorder(best_model), collapse=","), ")\n", sep="")
+cat("AIC:", round(AIC(best_model), 2), "\n")
+cat("BIC:", round(BIC(best_model), 2), "\n")
+```
+
+```{r}
+# US HOUSING STARTS 
+
+
+# Clear environment
+rm(list=ls())
+
+# Load libraries
+library(forecast)
+library(tseries)
+library(TSA)
+
+# Load Data
+housing_data <- read.csv("C:\\Users\\hkatt\\Downloads\\HOUSTNSA.csv", stringsAsFactors=FALSE)
+
+# Check what we have
+cat("Column names:", colnames(housing_data), "\n")
+cat("Number of rows:", nrow(housing_data), "\n")
+head(housing_data)
+str(housing_data)
+
+# Clean Data
+# Rename columns if needed
+if(colnames(housing_data)[1] != "DATE") {
+  colnames(housing_data)[1] <- "DATE"
+}
+if(colnames(housing_data)[2] != "HOUSTNSA") {
+  colnames(housing_data)[2] <- "HOUSTNSA"
+}
+
+# Remove rows where HOUSTNSA is "." or empty
+housing_data <- housing_data[housing_data$HOUSTNSA != ".", ]
+housing_data <- housing_data[housing_data$HOUSTNSA != "", ]
+housing_data <- housing_data[!is.na(housing_data$HOUSTNSA), ]
+
+# Convert to numeric
+housing_data$HOUSTNSA <- as.numeric(housing_data$HOUSTNSA)
+
+# Remove NA values
+housing_data <- housing_data[!is.na(housing_data$HOUSTNSA), ]
+
+# Check cleaned data
+cat("\nAfter cleaning:\n")
+cat("Number of rows:", nrow(housing_data), "\n")
+head(housing_data)
+
+# Parse Dates
+housing_data$DATE <- tryCatch({
+  as.Date(housing_data$DATE, format="%Y-%m-%d")
+}, error = function(e) {
+  tryCatch({
+    as.Date(housing_data$DATE, format="%m/%d/%Y")
+  }, error = function(e) {
+    as.Date(housing_data$DATE)
+  })
+})
+
+# Sort by date
+housing_data <- housing_data[order(housing_data$DATE), ]
+
+# Get start date
+start_year <- as.numeric(format(min(housing_data$DATE), "%Y"))
+start_month <- as.numeric(format(min(housing_data$DATE), "%m"))
+
+cat("\nDate range:", as.character(min(housing_data$DATE)), "to", 
+    as.character(max(housing_data$DATE)), "\n")
+cat("Start:", start_year, "-", start_month, "\n")
+
+# Create Time Series
+housing <- ts(housing_data$HOUSTNSA, 
+              start=c(start_year, start_month), 
+              frequency=12)
+
+# Verify
+cat("\nTIME SERIES INFO \n")
+cat("Length:", length(housing), "\n")
+cat("Frequency:", frequency(housing), "\n")
+cat("Start:", start(housing), "\n")
+cat("End:", end(housing), "\n")
+
+# ANALYSIS BEGINS HERE
+
+
+# Step 1: Plot the Data
+par(mfrow=c(1,1))
+plot(housing, main="US Housing Starts (Monthly, Not Seasonally Adjusted)",
+     ylab="Thousands of Units", xlab="Year", col="blue", lwd=1.5)
+grid()
+
+# Seasonal decomposition
+par(mfrow=c(1,1))
+decomp <- decompose(housing)
+plot(decomp)
+
+# Seasonal subseries plot
+par(mfrow=c(1,1))
+monthplot(housing, main="Seasonal Subseries Plot", ylab="Housing Starts")
+
+# Step 2: Variance Stabilization
+par(mfrow=c(1,2))
+plot(housing, main="Original Data")
+plot(log(housing), main="Log Transformed Data")
+
+# Use log transformation (variance more stable)
+log_housing <- log(housing)
+
+# Step 3: Check Stationarity
+par(mfrow=c(1,2))
+acf(log_housing, lag.max=48, main="ACF of Log Housing")
+pacf(log_housing, lag.max=48, main="PACF of Log Housing")
+
+# ADF test
+cat("\nADF TEST (Log Series)\n")
+adf_log <- adf.test(log_housing)
+print(adf_log)
+
+# Step 4: Differencing
+# First difference (d=1)
+diff1 <- diff(log_housing)
+
+par(mfrow=c(1,1))
+plot(diff1, main="First Difference of Log Housing")
+abline(h=0, col="red", lty=2)
+
+# Check ACF - still seasonal pattern
+par(mfrow=c(1,2))
+acf(diff1, lag.max=48, main="ACF after First Diff")
+pacf(diff1, lag.max=48, main="PACF after First Diff")
+
+# Seasonal difference (D=1, lag=12)
+diff_seasonal <- diff(diff1, lag=12)
+
+par(mfrow=c(1,1))
+plot(diff_seasonal, main="First + Seasonal Difference")
+abline(h=0, col="red", lty=2)
+
+# ADF test
+cat("\nADF TEST (After All Differencing)\n")
+adf_final <- adf.test(diff_seasonal)
+print(adf_final)
+
+# ACF/PACF after all differencing
+par(mfrow=c(1,2))
+acf(diff_seasonal, lag.max=48, main="ACF after All Differencing")
+pacf(diff_seasonal, lag.max=48, main="PACF after All Differencing")
+
+# EACF
+cat("\nEACF \n")
+eacf(diff_seasonal)
+
+# Step 5: Fit SARIMA Models 
+cat("\nFITTING SARIMA MODELS \n")
+
+# Based on ACF/PACF patterns, fit candidate models
+# ACF: spike at lag 1, spike at lag 12 -> MA(1) and SMA(1)
+# PACF: decay pattern
+
+smodel1 <- Arima(log_housing, order=c(0,1,1), 
+                 seasonal=list(order=c(0,1,1), period=12))
+
+smodel2 <- Arima(log_housing, order=c(1,1,1), 
+                 seasonal=list(order=c(0,1,1), period=12))
+
+smodel3 <- Arima(log_housing, order=c(0,1,1), 
+                 seasonal=list(order=c(1,1,1), period=12))
+
+smodel4 <- Arima(log_housing, order=c(1,1,1), 
+                 seasonal=list(order=c(1,1,1), period=12))
+
+smodel5 <- Arima(log_housing, order=c(1,1,0), 
+                 seasonal=list(order=c(1,1,0), period=12))
+
+smodel6 <- Arima(log_housing, order=c(2,1,1), 
+                 seasonal=list(order=c(0,1,1), period=12))
+
+smodel7 <- Arima(log_housing, order=c(0,1,2), 
+                 seasonal=list(order=c(0,1,1), period=12))
+
+# Auto ARIMA with Box-Cox (Trying to fix Normality)
+# lambda="auto" lets R find the best transformation to smooth outliers
+auto_smodel <- auto.arima(housing, lambda = "auto", stepwise=FALSE, approximation=FALSE)
+
+cat("\nSelected Lambda:", auto_smodel$lambda, "\n")
+
+# Compare AIC
+cat("\nMODEL COMPARISON (AIC) \n")
+smodel_comparison <- data.frame(
+  Model = c("SARIMA(0,1,1)(0,1,1)12", "SARIMA(1,1,1)(0,1,1)12",
+            "SARIMA(0,1,1)(1,1,1)12", "SARIMA(1,1,1)(1,1,1)12",
+            "SARIMA(1,1,0)(1,1,0)12", "SARIMA(2,1,1)(0,1,1)12",
+            "SARIMA(0,1,2)(0,1,1)12", "Auto ARIMA"),
+  AIC = c(AIC(smodel1), AIC(smodel2), AIC(smodel3), AIC(smodel4),
+          AIC(smodel5), AIC(smodel6), AIC(smodel7), AIC(auto_smodel)),
+  BIC = c(BIC(smodel1), BIC(smodel2), BIC(smodel3), BIC(smodel4),
+          BIC(smodel5), BIC(smodel6), BIC(smodel7), BIC(auto_smodel))
+)
+smodel_comparison <- smodel_comparison[order(smodel_comparison$AIC), ]
+print(smodel_comparison)
+
+cat("\nAuto ARIMA selected:", arimaorder(auto_smodel), "\n")
+
+# Step 6: Select Best Model 
+best_smodel <- auto_smodel  # Or choose based on lowest AIC
+
+cat("\n BEST MODEL SUMMARY \n")
+summary(best_smodel)
+
+# Step 7: Model Diagnostics 
+cat("\nMODEL DIAGNOSTICS \n")
+
+# Residual plots
+par(mfrow=c(2,2))
+
+plot(residuals(best_smodel), main="Residuals Over Time",
+     ylab="Residual", xlab="Year", col="blue")
+abline(h=0, col="red", lty=2)
+
+acf(residuals(best_smodel), lag.max=36, main="ACF of Residuals")
+
+qqnorm(residuals(best_smodel), main="Normal Q-Q Plot")
+qqline(residuals(best_smodel), col="red")
+
+hist(residuals(best_smodel), breaks=25, main="Histogram of Residuals",
+     xlab="Residual", col="lightblue", freq=FALSE)
+curve(dnorm(x, mean=mean(residuals(best_smodel)), 
+            sd=sd(residuals(best_smodel))), add=TRUE, col="red", lwd=2)
+
+# Ljung-Box Tests
+cat("\nLjung-Box Tests:\n")
+for(lag in c(12, 24, 36)) {
+  lb <- Box.test(residuals(best_smodel), lag=lag, type="Ljung-Box")
+  cat("Lag", lag, ": Q =", round(lb$statistic, 2), 
+      ", p-value =", round(lb$p.value, 4), "\n")
+}
+
+# Shapiro-Wilk Test
+cat("\nShapiro-Wilk Test:\n")
+sw <- shapiro.test(residuals(best_smodel))
+cat("W =", round(sw$statistic, 4), ", p-value =", round(sw$p.value, 4), "\n")
+
+# tsdiag
+par(mfrow=c(1,1))
+tsdiag(best_smodel, gof.lag=36)
+
+# checkresiduals
+checkresiduals(best_smodel)
+
+# Step 8: Forecasting 
+cat("\n FORECASTING \n")
+
+# Forecast next 24 months
+# Note: Because we used lambda="auto" in the model, this function 
+# AUTOMATICALLY back-transforms the data to the original scale.
+# Biasadj=TRUE ensures the mean is calculated correctly.
+fc_original <- forecast(best_smodel, h=24, level=c(80, 95), biasadj=TRUE)
+
+# Plot Forecast
+par(mfrow=c(1,1))
+plot(fc_original, main="Housing Starts 24-Month Forecast (Box-Cox)",
+     xlab="Year", ylab="Thousands of Units",
+     xlim=c(start(housing)[1], end(housing)[1] + 3),
+     col="blue", lwd=1.5)
+grid()
+
+# Print forecast values (Already in original scale!)
+cat("\nForecast Values (Original Scale - Thousands of Units):\n")
+forecast_df <- data.frame(
+  Period = as.character(time(fc_original$mean)),
+  Forecast = round(as.numeric(fc_original$mean), 1),
+  Lower_95 = round(as.numeric(fc_original$lower[,2]), 1),
+  Upper_95 = round(as.numeric(fc_original$upper[,2]), 1)
+)
+print(forecast_df)
+
+# Summary for Report
+cat("\n SUMMARY FOR REPORT \n")
+cat("Dataset: US Housing Starts (Not Seasonally Adjusted)\n")
+cat("Period:", start_year, "-", start_month, "to", end(housing)[1], "-", end(housing)[2], "\n")
+cat("Observations:", length(housing), "\n")
+cat("Transformation: Log\n")
+cat("Best Model: SARIMA(", paste(arimaorder(best_smodel)[1:3], collapse=","), 
+    ")(", paste(arimaorder(best_smodel)[4:6], collapse=","), ")12\n", sep="")
+cat("AIC:", round(AIC(best_smodel), 2), "\n")
+cat("BIC:", round(BIC(best_smodel), 2), "\n")
+
+```
