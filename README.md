@@ -58,10 +58,10 @@ VISUALIZATIONS
 
 1. EUR/USD Forecast (The "Random Walk")
 The widening confidence intervals indicate the inherent unpredictability of exchange rates.
-[<img width="1297" height="716" alt="image" src="https://github.com/user-attachments/assets/231d1ae8-4675-4e4a-be28-49431b9e31b7" />
+<img width="1297" height="716" alt="image" src="https://github.com/user-attachments/assets/231d1ae8-4675-4e4a-be28-49431b9e31b7" />
 2. Housing Starts Forecast (The "Seasonal Cycle")
 The model accurately captures the annual construction cycle.
-[<img width="1153" height="750" alt="image" src="https://github.com/user-attachments/assets/046845af-b30b-40d1-a135-070544afb55a" />]
+<img width="1153" height="750" alt="image" src="https://github.com/user-attachments/assets/046845af-b30b-40d1-a135-070544afb55a" />
 
 TECHNOLOGIES & LIBRARIES
 
